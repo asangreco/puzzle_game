@@ -330,4 +330,3 @@ st.markdown("""
 - Shuffle to scramble the puzzle pieces (or manually move tiles by clicking Move buttons).
 - Press *Solve (A\**)* to compute the optimal solution; then step through or auto-play.
 """)
-
