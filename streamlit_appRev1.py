@@ -1,6 +1,8 @@
 import streamlit as st
 from PIL import Image, ImageOps, ImageDraw
 import io, random, heapq, time
+import hashlib
+from io import BytesIO
 
 # Puzzle logic
 GOAL = (1, 2, 3, 4, 5, 6, 7, 8, 0)
@@ -95,12 +97,15 @@ defaults = {
     "start_time": None,                    # timestamp when timer started
     "auto_play": False,                    # whether solution autoplay is running
 }
-
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
-# Image slicing 
+# store last processed upload fingerprint (NEW)
+if "last_upload_id" not in st.session_state:
+    st.session_state.last_upload_id = None
+
+# Image slicing
 def crop_center_square(img: Image.Image) -> Image.Image:
     w,h = img.size
     m = min(w,h)
@@ -128,7 +133,7 @@ def slice_into_tiles(img: Image.Image):
     tiles[0] = blank
     return tiles
 
-# Streamlit app 
+# Streamlit app
 st.set_page_config(page_title="🧩 Puzzle Your Image! 🧩", layout="centered")
 st.title("🧩 Puzzle Your Image! 🧩")
 
@@ -150,15 +155,20 @@ if "sol_index" not in st.session_state:
 if "auto_play" not in st.session_state:
     st.session_state.auto_play = False
 
-# Upload
+# Upload (CHANGED: guarded initialization so it runs only when file changes)
 uploaded = st.file_uploader("Upload image (jpg/png)", type=["png","jpg","jpeg"])
-if uploaded:
-    img = Image.open(io.BytesIO(uploaded.read())).convert("RGB")
-    st.session_state.tiles = slice_into_tiles(img)
-    st.session_state.state = GOAL
-    st.session_state.solution = None
-    st.session_state.sol_index = 0
-    st.success("Image loaded and sliced. Start shuffling or play from the goal!")
+if uploaded is not None:
+    file_bytes = uploaded.getvalue()
+    upload_fingerprint = (uploaded.name, len(file_bytes), hashlib.md5(file_bytes).hexdigest())
+
+    if st.session_state.last_upload_id != upload_fingerprint:
+        img = Image.open(BytesIO(file_bytes)).convert("RGB")
+        st.session_state.tiles = slice_into_tiles(img)
+        st.session_state.state = GOAL
+        st.session_state.solution = None
+        st.session_state.sol_index = 0
+        st.session_state.last_upload_id = upload_fingerprint
+        st.success("Image loaded and sliced. Start shuffling or play from the goal!")
 
 # Controls
 col1, col2, col3, col4 = st.columns([1,1,1,1])
@@ -291,13 +301,24 @@ if st.session_state.solution:
     st.write(f"Step {idx} / {len(sol)-1}")
     # draw the state images inline
     cur = sol[idx]
-    for r in range(3):
-        cols = st.columns(3)
-        for c in range(3):
-            idx_tile = rc_to_index(r, c)
-            tile_num = cur[idx_tile]
-            with cols[c]:
-                st.image(tiles[tile_num], use_container_width=True)
+    cols = st.columns(3)
+    for c in range(3):
+        idx = r * 3 + c
+        tile_num = state[idx]
+
+        with cols[c]:
+            if tile_num == 0:
+                st.image(tiles[0], use_container_width=True)  # blank tile
+            else:
+                if st.image_button(tiles[tile_num], key=f"tile_{idx}", use_container_width=True):
+                    zero_idx = state.index(0)
+                    zr, zc = divmod(zero_idx, 3)
+                    tr, tc = divmod(idx, 3)
+                    if abs(zr - tr) + abs(zc - tc) == 1:
+                        new_state = list(state)
+                        new_state[zero_idx], new_state[idx] = new_state[idx], new_state[zero_idx]
+                        st.session_state.state = tuple(new_state)
+                        st.session_state.move_count += 1
 
     # autoplay mechanism: advance index and rerun while auto_play true
     if st.session_state.auto_play:
@@ -306,7 +327,7 @@ if st.session_state.solution:
         if next_idx != st.session_state.sol_index:
             st.session_state.sol_index = next_idx
             time.sleep(0.4)
-            st.rerun()
+            st.experimental_rerun()
         else:
             st.session_state.auto_play = False
             st.success("Reached final state.")
