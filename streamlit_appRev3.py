@@ -1,8 +1,8 @@
 import streamlit as st
 from PIL import Image, ImageOps, ImageDraw
 import io, random, heapq, time
-import hashlib
-from io import BytesIO
+import hashlib  #for implementing fingerprint for uploaded file
+from io import BytesIO # for file handling
 
 # Puzzle logic
 GOAL = (1, 2, 3, 4, 5, 6, 7, 8, 0)
@@ -30,8 +30,8 @@ def neighbors(state):
 def manhattan(s, goal=GOAL):
     dist = 0
     for idx, tile in enumerate(s):
-        if tile == 0:
-            continue
+        # s is tuple length 9; tiles 1..8
+        if tile == 0: continue
         goal_idx = goal.index(tile)
         r1,c1 = index_to_rc(idx)
         r2,c2 = index_to_rc(goal_idx)
@@ -61,8 +61,9 @@ def astar(start, goal=GOAL, max_nodes=200000):
         _, _, current = heapq.heappop(open_heap)
         nodes += 1
         if nodes > max_nodes:
-            return None
+            return None # fail gracefully for very large search
         if current == goal:
+            # reconstruct
             path = [current]
             while current in came_from:
                 current = came_from[current]
@@ -83,24 +84,24 @@ def astar(start, goal=GOAL, max_nodes=200000):
 
 # Initialize session_state
 if "state" not in st.session_state:
-    st.session_state.state = GOAL
+    st.session_state.state = GOAL # solved puzzle
 if "move_count" not in st.session_state:
     st.session_state.move_count = 0
 
 defaults = {
-    "state": GOAL,
-    "history": [],
-    "solution": None,   # list of states from start->goal (for playback)
-    "sol_index": 0,     # current index into solution path
-    "move_count": 0,
-    "start_time": None,
-    "auto_play": False, # playback autoplay flag
+    "state": GOAL,      # current puzzle state (tuple)
+    "history": [],      # list of previous states (optional)
+    "solution": None,   # solver path if computed
+    "sol_index": 0,     # index into solution path
+    "move_count": 0,    # your move counter
+    "start_time": None, # timestamp when timer started
+    "auto_play": False, # whether solution autoplay is running
 }
 for key, val in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = val
 
-# store last processed upload fingerprint (prevents "auto-solve after click" regression)
+# store last processed upload to prevent auto solve after click
 if "last_upload_id" not in st.session_state:
     st.session_state.last_upload_id = None
 
@@ -125,7 +126,7 @@ def slice_into_tiles(img: Image.Image):
             tile_img = img.crop(box)
             tiles[num] = tile_img
             num += 1
-    # stylized blank
+    # Tile style
     blank = Image.new("RGB", (size,size), (240,240,240))
     draw = ImageDraw.Draw(blank)
     draw.rectangle([1,1,size-2,size-2], outline=(200,200,200))
@@ -136,8 +137,9 @@ def slice_into_tiles(img: Image.Image):
 st.set_page_config(page_title="🧩 Puzzle Your Image! 🧩", layout="centered")
 st.title("🧩 Puzzle Your Image! 🧩")
 
-# Session state initialization for tiles and timers
+# Session state initialization
 if "tiles" not in st.session_state:
+    # load default image from an embedded small placeholder (a simple colored PIL created image)
     default = Image.new("RGB",(450,450),(180,200,230))
     draw = ImageDraw.Draw(default)
     draw.text((20,20),"Upload an image to make your puzzle", fill=(10,10,10))
@@ -149,12 +151,12 @@ if "auto_play" not in st.session_state:
 if "start_time" not in st.session_state:
     st.session_state.start_time = None
 
-# Upload (guarded so it runs only when the file changes)
+# Upload
 uploaded = st.file_uploader("Upload image (jpg/png)", type=["png","jpg","jpeg"])
 if uploaded is not None:
     file_bytes = uploaded.getvalue()
-    upload_fingerprint = (uploaded.name, len(file_bytes), hashlib.md5(file_bytes).hexdigest())
-    if st.session_state.last_upload_id != upload_fingerprint:
+    upload_fingerprint = (uploaded.name, len(file_bytes), hashlib.md5(file_bytes).hexdigest()) 
+    if st.session_state.last_upload_id != upload_fingerprint: #initializing only for a new file upload
         img = Image.open(BytesIO(file_bytes)).convert("RGB")
         st.session_state.tiles = slice_into_tiles(img)
         st.session_state.state = GOAL
@@ -167,6 +169,7 @@ if uploaded is not None:
 col1, col2, col3, col4 = st.columns([1,1,1,1])
 with col1:
     if st.button("Shuffle pieces", key="btn_shuffle"):
+        # perform many random legal moves from GOAL to guarantee solvable
         s = list(GOAL)
         moves = random.randint(20,60)
         last = None
@@ -205,14 +208,13 @@ with col3:
             if path is None:
                 st.error("A* failed to find a solution within limits.")
             else:
-                # Prepare step-by-step playback (do NOT apply immediately)
+                # Preparing step-by-step playback
                 st.session_state.solution = path
                 st.session_state.sol_index = 0
                 st.session_state.auto_play = False
                 st.success(f"Found solution in {len(path)-1} moves (time {t1-t0:.2f}s).")
 
 with col4:
-    # no-op layout column, but keep time/move defaults sane if absent
     if "move_count" not in st.session_state:
         st.session_state.move_count = 0
     if "start_time" not in st.session_state:
@@ -226,7 +228,7 @@ minutes, seconds = divmod(elapsed, 60)
 st.write(f"**Moves made:** {moves_so_far}")
 st.write(f"**Time elapsed:** {minutes:02d}:{seconds:02d}")
 
-# Puzzle grid (interactive play)
+# Puzzle grid display
 state = list(st.session_state.state)
 tiles = st.session_state.tiles
 
@@ -236,8 +238,7 @@ for r in range(3):
         idx = rc_to_index(r, c)
         tile_num = state[idx]
         with cols[c]:
-            # If a solution is currently loaded for playback, keep the main board interactive.
-            # (If you prefer to freeze it during playback, render only st.image here.)
+            # If solution currently loaded for playback, keeps main board interactive
             if st.button(f"{tile_num}", key=f"tile_{idx}"):
                 zero_idx = state.index(0)
                 zr, zc = index_to_rc(zero_idx)
@@ -251,7 +252,7 @@ for r in range(3):
                     st.rerun()  # refresh to avoid ghost image
             st.image(tiles[tile_num], use_container_width=True)
 
-# ----- Step-by-step playback (fixed) -----
+#Step-by-step playback
 if st.session_state.solution:
     st.markdown("---")
     st.subheader("Solution playback")
@@ -261,7 +262,7 @@ if st.session_state.solution:
 
     st.write(f"Optimal path length: {n_steps} moves")
 
-    # Controls (use unique keys)
+    # Controls
     c1, c2, c3, c4 = st.columns([1,1,1,1])
     with c1:
         if st.button("Prev", key="pb_prev"):
@@ -290,7 +291,7 @@ if st.session_state.solution:
             st.session_state.auto_play = False
             st.rerun()
 
-    # Render the board for the CURRENT STEP (use 'cur', not live 'state')
+    # Render board for current step
     step_idx = st.session_state.sol_index
     st.write(f"Step {step_idx} / {n_steps}")
 
@@ -303,7 +304,7 @@ if st.session_state.solution:
             with cols[c]:
                 st.image(tiles[tnum], use_container_width=True)
 
-    # Auto-play handler: advance and rerun until end
+    # Auto play handler
     if st.session_state.auto_play:
         if st.session_state.sol_index < len(sol) - 1:
             time.sleep(0.4)
