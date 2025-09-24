@@ -231,17 +231,10 @@ state = list(st.session_state.state)
 tiles = st.session_state.tiles
 
 for r in range(3):
-    #cols = st.columns(3)
-    #for c in range(3):
-        #idx = rc_to_index(r, c)
-        #tile_num = state[idx]
     cols = st.columns(3)
     for c in range(3):
         idx = rc_to_index(r, c)
-        tile_num = cur[idx]  # Use cur (solution state)
-        with cols[c]:
-            st.image(tiles[tile_num], use_container_width=True)
-        
+        tile_num = state[idx]
 
         with cols[c]:
             # Render the tile as a clickable button with its image
@@ -298,24 +291,13 @@ if st.session_state.solution:
     st.write(f"Step {idx} / {len(sol)-1}")
     # draw the state images inline
     cur = sol[idx]
-    cols = st.columns(3)
-    for c in range(3):
-        idx = r * 3 + c
-        tile_num = state[idx]
-
-        with cols[c]:
-            if tile_num == 0:
-                st.image(tiles[0], use_container_width=True)  # blank tile
-            else:
-                if st.image_button(tiles[tile_num], key=f"tile_{idx}", use_container_width=True):
-                    zero_idx = state.index(0)
-                    zr, zc = divmod(zero_idx, 3)
-                    tr, tc = divmod(idx, 3)
-                    if abs(zr - tr) + abs(zc - tc) == 1:
-                        new_state = list(state)
-                        new_state[zero_idx], new_state[idx] = new_state[idx], new_state[zero_idx]
-                        st.session_state.state = tuple(new_state)
-                        st.session_state.move_count += 1
+    for r in range(3):
+        cols = st.columns(3)
+        for c in range(3):
+            idx_tile = rc_to_index(r, c)
+            tile_num = cur[idx_tile]
+            with cols[c]:
+                st.image(tiles[tile_num], use_container_width=True)
 
     # autoplay mechanism: advance index and rerun while auto_play true
     if st.session_state.auto_play:
@@ -324,7 +306,7 @@ if st.session_state.solution:
         if next_idx != st.session_state.sol_index:
             st.session_state.sol_index = next_idx
             time.sleep(0.4)
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.session_state.auto_play = False
             st.success("Reached final state.")
@@ -337,4 +319,3 @@ st.markdown("""
 - Shuffle to scramble the puzzle pieces (or manually move tiles by clicking Move buttons).
 - Press *Solve (A\**)* to compute the optimal solution; then step through or auto-play.
 """)
-
